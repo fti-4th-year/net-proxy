@@ -47,7 +47,7 @@ int main(int argc, char *argv[]) {
 			return 3;
 		}
 		
-		// read SOCKS4
+#ifdef USE_SOCKS4
 		{
 			char buf[9];
 			int len = read(cli_sockfd, buf, 9);
@@ -56,14 +56,15 @@ int main(int argc, char *argv[]) {
 				perror("Error read SOCKS4 from client");
 			}
 			write(0, buf, 9);
-			/*
 			printf("SOCKS:\n");
 			printf("version: %d\n", (int) buf[0]);
 			printf("command: %d\n", (int) buf[1]);
 			printf("port: %d\n", (int) buf[2] | (int) buf[3] << 8);
 			printf("address: %d:%d:%d:%d\n", (int) buf[4], (int) buf[5], (int) buf[6], (int) buf[7]);
-			*/
 		}
+#else
+		
+#endif
 		
 		int serv_sockfd, serv_portno;
 		struct sockaddr_in serv_addr;
