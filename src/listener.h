@@ -3,7 +3,7 @@
 #include <stdlib.h>
 #include <pthread.h>
 
-#define BUFFER_SIZE 0x100
+#define BUFFER_SIZE 0x1000
 
 typedef struct _listener
 {

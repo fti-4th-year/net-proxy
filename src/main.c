@@ -10,13 +10,19 @@
 
 #include "listener.h"
 
-#define POOL_SIZE   0x10
+#define POOL_SIZE   0x100
 
 int done = 0;
 
 void sighandler(int signo)
 {
 	done = 1;
+}
+
+void sigpipehandler(int signo)
+{
+	const char *pmsg = "trying to write to broken socket\n";
+	write(0, pmsg, strlen(pmsg));
 }
 
 int main(int argc, char *argv[])
@@ -33,6 +39,7 @@ int main(int argc, char *argv[])
 	
 	signal(SIGINT, sighandler);
 	signal(SIGTERM, sighandler);
+	signal(SIGPIPE, sigpipehandler);
 	
 	for(i = 0; i < POOL_SIZE; ++i)
 	{
@@ -49,7 +56,7 @@ int main(int argc, char *argv[])
 	}
 	
 	bzero((char *) &proxy_addr, sizeof(proxy_addr));
-	proxy_portno = 8080;
+	proxy_portno = 8081;
 	proxy_addr.sin_family = AF_INET;
 	proxy_addr.sin_addr.s_addr = INADDR_ANY;
 	proxy_addr.sin_port = htons(proxy_portno);
@@ -88,10 +95,10 @@ int main(int argc, char *argv[])
 			int p_host = cli_addr.sin_addr.s_addr;
 			int p_port = cli_addr.sin_port;
 			printf("accepted %d.%d.%d.%d:%d\n", 
-			       (p_host >> 24) & 0xff,
-			       (p_host >> 16) & 0xff,
-			       (p_host >>  8) & 0xff,
 			       (p_host >>  0) & 0xff,
+			       (p_host >>  8) & 0xff,
+			       (p_host >> 16) & 0xff,
+			       (p_host >> 24) & 0xff,
 			       p_port
 			       );
 		}
