@@ -10,7 +10,7 @@ typedef struct _listener
 	int id;
 	pthread_t thread, reader, writer;
 	pthread_mutex_t mutex;
-	int active;
+	int active, zombie;
 	int reader_active, writer_active;
 	int cli_sockfd, serv_sockfd;
 }

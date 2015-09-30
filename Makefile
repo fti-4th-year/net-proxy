@@ -13,7 +13,7 @@ obj/main.o: src/main.c src/listener.h
 	gcc -g -c $< -o $@
 
 obj/listener.o: src/listener.c src/listener.h
-	gcc -g -c $< -o $@
+	gcc -g -c $< -o $@ -DUSE_POLL
 
 clean:
 	rm -r ./bin/

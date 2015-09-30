@@ -31,7 +31,7 @@ int main(int argc, char *argv[])
 	int proxy_sockfd;
 	struct sockaddr_in proxy_addr, cli_addr;
 	socklen_t clilen;
-	int proxy_portno = 8081;
+	int proxy_portno = 8080;
 	listener *pool;
 	int i;
 	
@@ -124,6 +124,8 @@ int main(int argc, char *argv[])
 			{
 				if(!pool[i].active)
 				{
+					if(pool[i].zombie)
+						wait_listener(pool + i);
 					pool[i].cli_sockfd = cli_sockfd;
 					spawn_listener(pool + i);
 					spawned = 1;
@@ -137,30 +139,27 @@ int main(int argc, char *argv[])
 			continue;
 		
 		fprintf(stderr, "thread pool is full\ntry again\n");
-		/*
-		{
-			fprintf(stderr, "thread pool is full\nincreasing pool size\n");
-			int new_pool_size = 2*pool_size;
-			listener *new_pool = (listener *) malloc(new_pool_size*sizeof(listener));
-		}
-		*/
 	}
 	
 join_listeners:
 	for(i = 0; i < POOL_SIZE; ++i)
 	{
-		int active = 0;
 		pthread_mutex_lock(&pool[i].mutex);
 		{
 			if(pool[i].active)
 			{
-				active = 1;
 				pool[i].active = 0;
+				pool[i].zombie = 1;
 			}
 		}
 		pthread_mutex_unlock(&pool[i].mutex);
-		if(active)
+	}
+	for(i = 0; i < POOL_SIZE; ++i)
+	{
+		if(pool[i].zombie)
+		{
 			wait_listener(pool + i);
+		}
 	}
 
 close_proxy:

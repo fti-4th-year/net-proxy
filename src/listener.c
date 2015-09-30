@@ -9,12 +9,17 @@
 #include <netinet/in.h>
 #include <netdb.h>
 
+#ifdef USE_POLL
+#include <poll.h>
+#endif
+
 void *listener_main(void *cookie);
 void *reader_main(void *cookie);
 void *writer_main(void *cookie);
 
 int init_listener(listener *lst)
 {
+	lst->zombie = 0;
 	lst->active = 0;
 	pthread_mutex_init(&lst->mutex, NULL);
 }
@@ -33,7 +38,9 @@ int spawn_listener(listener *lst)
 int wait_listener(listener *lst)
 {
 	lst->active = 0;
-	return pthread_join(lst->thread, NULL);
+	int ret = pthread_join(lst->thread, NULL);
+	lst->zombie = 1;
+	return ret;
 }
 
 int parse_socks4(int sockfd, struct sockaddr_in *addr)
@@ -73,7 +80,9 @@ void *listener_main(void *cookie)
 	struct sockaddr_in serv_addr;
 	listener *lst = (listener *) cookie;
 	
-	printf("[ %02d ]\tstarted\n", lst->id);
+	lst->zombie = 0;
+	
+	printf("[ %3d ]\tstarted\n", lst->id);
 	
 	bzero((char*)&serv_addr, sizeof(serv_addr));
 	serv_addr.sin_family = AF_INET;
@@ -89,8 +98,8 @@ void *listener_main(void *cookie)
 		perror("Error connecting to server");
 	
 	lst->reader_active = 1;
-	pthread_create(&lst->reader, NULL, reader_main, (void *) lst);
 	lst->writer_active = 1;
+	pthread_create(&lst->reader, NULL, reader_main, (void *) lst);
 	pthread_create(&lst->writer, NULL, writer_main, (void *) lst);
 	
 	int done = 0;
@@ -110,23 +119,24 @@ void *listener_main(void *cookie)
 	}
 	
 	close(lst->serv_sockfd);
-	printf("[ %02d ]\tdone\n", lst->id);
+	//printf("[ %3d ]\tdone\n", lst->id);
 	
 finalize:
 	close(lst->cli_sockfd);
 	
 	lst->reader_active = 0;
-	pthread_join(lst->reader, NULL);
 	lst->writer_active = 0;
+	pthread_join(lst->reader, NULL);
 	pthread_join(lst->writer, NULL);
 	
 	pthread_mutex_lock(&lst->mutex);
 	{
+		lst->zombie = 1;
 		lst->active = 0;
 	}
 	pthread_mutex_unlock(&lst->mutex);
 	
-	printf("[ %02d ]\tstopped\n", lst->id);
+	printf("[ %3d ]\tstopped\n", lst->id);
 	
 	return NULL;
 }
@@ -145,6 +155,11 @@ void *reader_main(void *cookie)
 	}
 	
 	int done = 0;
+#ifdef USE_POLL
+	struct pollfd pfd;
+	pfd.fd = lst->serv_sockfd;
+	pfd.events = POLLIN;
+#endif
 	for(;;)
 	{
 		pthread_mutex_lock(&lst->mutex);
@@ -157,21 +172,38 @@ void *reader_main(void *cookie)
 		if(done)
 			break;
 		
-		len = read(lst->serv_sockfd, buffer, BUFFER_SIZE);
-		printf("[ %02d ]\tserver read %d bytes\n", lst->id, len);
-		if(len < 0)
+#ifdef USE_POLL
+		poll(&pfd, 1, 1000);
+		if(pfd.revents & POLLIN)
+#endif
 		{
-			fprintf(stderr, "[ %02d ]\terror read server socket", lst->id);
-			perror("");
+			len = read(lst->serv_sockfd, buffer, BUFFER_SIZE);
+			//printf("[ %3d ]\tserver read %d bytes\n", lst->id, len);
+			if(len < 0)
+			{
+				fprintf(stderr, "[ %3d ]\terror read server socket", lst->id);
+				perror("");
+			}
+			if(len <= 0)
+				break;
 		}
-		if(len <= 0)
+#ifdef USE_POLL
+		else if(!pfd.revents)
+			continue;
+		else if(pfd.revents & POLLNVAL)
 			break;
+		else
+		{
+			fprintf(stderr, "[ %3d ]\terror poll client socket\n", lst->id);
+			break;
+		}
+#endif
 		
 		len = write(lst->cli_sockfd, buffer, len);
-		printf("[ %02d ]\tclient write %d bytes\n", lst->id, len);
+		//printf("[ %3d ]\tclient write %d bytes\n", lst->id, len);
 		if(len < 0)
 		{
-			fprintf(stderr, "[ %02d ]\terror write client socket", lst->id);
+			fprintf(stderr, "[ %3d ]\terror write client socket", lst->id);
 			perror("");
 		}
 		if(len <= 0)
@@ -203,6 +235,11 @@ void *writer_main(void *cookie)
 	}
 	
 	int done = 0;
+#ifdef USE_POLL
+	struct pollfd pfd;
+	pfd.fd = lst->cli_sockfd;
+	pfd.events = POLLIN;
+#endif
 	for(;;)
 	{
 		pthread_mutex_lock(&lst->mutex);
@@ -215,22 +252,40 @@ void *writer_main(void *cookie)
 		if(done)
 			break;
 		
-		len = read(lst->cli_sockfd, buffer, BUFFER_SIZE);
-		printf("[ %02d ]\tclient read %d bytes\n", lst->id, len);
-		if(len < 0)
+#ifdef USE_POLL
+		poll(&pfd, 1, 1000);
+		if(pfd.revents & POLLIN)
+#endif
 		{
-			fprintf(stderr, "[ %02d ]\terror read client socket", lst->id);
-			perror("");
+			len = read(lst->cli_sockfd, buffer, BUFFER_SIZE);
+			//printf("[ %3d ]\tclient read %d bytes\n", lst->id, len);
+			if(len < 0)
+			{
+				fprintf(stderr, "[ %3d ]\terror read client socket", lst->id);
+				perror("");
+			}
+			if(len <= 0)
+				break;
 		}
-		if(len <= 0)
+#ifdef USE_POLL
+		else if(!pfd.revents)
+			continue;
+		else if(pfd.revents & POLLNVAL)
 			break;
+		else
+		{
+			fprintf(stderr, "[ %3d ]\terror poll client socket\n", lst->id);
+			break;
+		}
+#endif
 		
 		//write(0, buffer, len);
+		
 		len = write(lst->serv_sockfd, buffer, len);
-		printf("[ %02d ]\tserver write %d bytes\n", lst->id, len);
+		//printf("[ %3d ]\tserver write %d bytes\n", lst->id, len);
 		if(len < 0)
 		{
-			fprintf(stderr, "[ %02d ]\terror write server socket", lst->id);
+			fprintf(stderr, "[ %3d ]\terror write server socket", lst->id);
 			perror("");
 		}
 		if(len <= 0)
