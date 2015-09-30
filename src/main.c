@@ -10,7 +10,7 @@
 
 #include "listener.h"
 
-#define POOL_SIZE   0x100
+#define POOL_SIZE 0x100
 
 int done = 0;
 
@@ -21,7 +21,7 @@ void sighandler(int signo)
 
 void sigpipehandler(int signo)
 {
-	const char *pmsg = "trying to write to broken socket\n";
+	const char *pmsg = "SIGPIPE: trying to write to broken socket\n";
 	write(0, pmsg, strlen(pmsg));
 }
 
@@ -31,9 +31,16 @@ int main(int argc, char *argv[])
 	int proxy_sockfd;
 	struct sockaddr_in proxy_addr, cli_addr;
 	socklen_t clilen;
-	int proxy_portno;
-	listener pool[POOL_SIZE];
+	int proxy_portno = 8081;
+	listener *pool;
 	int i;
+	
+	pool = (listener *) malloc(POOL_SIZE*sizeof(listener));
+	if(pool == NULL)
+	{
+		fprintf(stderr, "cannot allocate memory\nexiting ...\n");
+		return -1;
+	}
 	
 	printf("server started\n");
 	
@@ -56,7 +63,6 @@ int main(int argc, char *argv[])
 	}
 	
 	bzero((char *) &proxy_addr, sizeof(proxy_addr));
-	proxy_portno = 8081;
 	proxy_addr.sin_family = AF_INET;
 	proxy_addr.sin_addr.s_addr = INADDR_ANY;
 	proxy_addr.sin_port = htons(proxy_portno);
@@ -131,6 +137,13 @@ int main(int argc, char *argv[])
 			continue;
 		
 		fprintf(stderr, "thread pool is full\ntry again\n");
+		/*
+		{
+			fprintf(stderr, "thread pool is full\nincreasing pool size\n");
+			int new_pool_size = 2*pool_size;
+			listener *new_pool = (listener *) malloc(new_pool_size*sizeof(listener));
+		}
+		*/
 	}
 	
 join_listeners:
@@ -160,6 +173,8 @@ finalize:
 	}
 	
 	printf("server stopped\n");
+	
+	free(pool);
 	
 	return ret;
 }

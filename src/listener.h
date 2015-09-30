@@ -3,15 +3,16 @@
 #include <stdlib.h>
 #include <pthread.h>
 
-#define BUFFER_SIZE 0x1000
+#define BUFFER_SIZE 0x10000
 
 typedef struct _listener
 {
 	int id;
-	pthread_t thread;
+	pthread_t thread, reader, writer;
 	pthread_mutex_t mutex;
 	int active;
-	int cli_sockfd;
+	int reader_active, writer_active;
+	int cli_sockfd, serv_sockfd;
 }
 listener;
 
